@@ -1,40 +1,37 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
-export async function POST(request: Request) {
-  const supabase = createRouteHandlerClient({ cookies })
+export async function GET() {
+  const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const body = await request.json()
-  const { complaint_id, preferred_date, preferred_time, lga_office } = body
-
-  // Validate office location exists
-  const validLGAs = ['Ikeja', 'Alimosho', 'Badagry', 'Ikorodu', 'Lagos Island', 'Onikan']
-  if (!validLGAs.includes(lga_office)) {
-    return NextResponse.json({ error: 'Invalid LGA office' }, { status: 400 })
-  }
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data, error } = await supabase
     .from('appointments')
-    .insert([{
-      complaint_id,
-      user_id: user.id,
-      preferred_date,
-      preferred_time,
-      lga_office,
-      status: 'pending'
-    }])
-    .select()
-    .single()
+    .select('*, complaint:complaints(title, case_number)')
+    .eq('complainant_id', user.id)
+    .order('scheduled_date', { ascending: true })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const body = await request.json()
+  const { data, error } = await supabase.from('appointments').insert({
+    ...body,
+    complainant_id: user.id,
+    status: 'pending',
+  }).select().single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Update complaint status
+  await supabase.from('complaints').update({ status: 'mediation_scheduled' }).eq('id', body.complaint_id)
+
+  return NextResponse.json(data, { status: 201 })
 }

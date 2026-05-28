@@ -1,148 +1,135 @@
 'use client'
+export const dynamic = 'force-dynamic'
+
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import toast from 'react-hot-toast'
+import { useRouter } from 'next/navigation'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { Eye, EyeOff } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { registerSchema, RegisterInput } from '@/lib/validations/schemas'
+import { LGA_LIST } from '@/lib/utils/constants'
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 
 export default function RegisterPage() {
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    full_name: '',
-    phone: '',
-    lga: ''
-  })
-  const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
   const router = useRouter()
   const supabase = createClient()
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<RegisterInput>({
+    resolver: zodResolver(registerSchema),
+  })
 
-    // Sign up user
+  const onSubmit = async (data: RegisterInput) => {
+    setError('')
     const { data: authData, error: signUpError } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
+      email: data.email,
+      password: data.password,
+      options: {
+        data: { full_name: data.full_name, phone: data.phone, lga: data.lga, role: 'citizen' }
+      }
     })
 
-    if (signUpError) {
-      toast.error(signUpError.message)
-      setLoading(false)
-      return
-    }
+    if (signUpError) { setError(signUpError.message); return }
 
     if (authData.user) {
-      // Create profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([{
-          id: authData.user.id,
-          full_name: formData.full_name,
-          phone: formData.phone,
-          lga: formData.lga
-        }])
-
-      if (profileError) {
-        toast.error('Error creating profile')
-      } else {
-        toast.success('Registration successful! Please login.')
-        router.push('/login')
-      }
+      const { error: profileError } = await supabase.from('profiles').upsert({
+        id: authData.user.id,
+        full_name: data.full_name,
+        email: data.email,
+        phone: data.phone,
+        lga: data.lga,
+        address: data.address,
+        role: 'citizen',
+      })
+      if (profileError) { setError(profileError.message); return }
     }
-    setLoading(false)
+
+    router.push('/dashboard')
+    router.refresh()
   }
 
-  const lgas = [
-    'Agege', 'Alimosho', 'Badagry', 'Epe', 'Ikeja', 'Ikorodu', 
-    'Lagos Island', 'Lagos Mainland', 'Mushin', 'Ojo', 'Shomolu', 
-    'Surulere', 'Apapa', 'Ajeromi-Ifelodun', 'Amuwo-Odofin'
-  ]
+  const inputClass = "w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-2xl">
-        <div className="text-center">
-          <div className="text-6xl mb-4">📝</div>
-          <h2 className="text-3xl font-bold text-gray-900">Register</h2>
-          <p className="mt-2 text-sm text-gray-600">Access free mediation services</p>
+    <div className="w-full max-w-lg">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+        <div className="text-center mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Create Your Account</h1>
+          <p className="text-gray-500 text-sm mt-1">Register to file complaints and access mediation services</p>
         </div>
-        
-        <form className="mt-8 space-y-6" onSubmit={handleRegister}>
-          <div className="space-y-4">
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-6">{error}</div>
+        )}
+
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name</label>
+            <input {...register('full_name')} className={inputClass} placeholder="e.g. Adewale Johnson" />
+            {errors.full_name && <p className="text-red-500 text-xs mt-1">{errors.full_name.message}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Full Name *</label>
-              <input
-                type="text"
-                required
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={formData.full_name}
-                onChange={(e) => setFormData({...formData, full_name: e.target.value})}
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+              <input {...register('email')} type="email" className={inputClass} placeholder="you@example.com" />
+              {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Email *</label>
-              <input
-                type="email"
-                required
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Phone Number</label>
+              <input {...register('phone')} className={inputClass} placeholder="08012345678" />
+              {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone.message}</p>}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-              <input
-                type="tel"
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
-              />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Local Government Area</label>
+            <select {...register('lga')} className={inputClass}>
+              <option value="">Select your LGA</option>
+              {LGA_LIST.map(lga => <option key={lga} value={lga}>{lga}</option>)}
+            </select>
+            {errors.lga && <p className="text-red-500 text-xs mt-1">{errors.lga.message}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Home Address <span className="text-gray-400">(Optional)</span></label>
+            <input {...register('address')} className={inputClass} placeholder="Your residential address" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+            <div className="relative">
+              <input {...register('password')} type={showPassword ? 'text' : 'password'} className={`${inputClass} pr-10`} placeholder="Min. 8 characters" />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">LGA of Residence *</label>
-              <select
-                required
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={formData.lga}
-                onChange={(e) => setFormData({...formData, lga: e.target.value})}
-              >
-                <option value="">Select LGA</option>
-                {lgas.map(lga => (
-                  <option key={lga} value={lga}>{lga}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Password *</label>
-              <input
-                type="password"
-                required
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-              />
-              <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
-            </div>
+            {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm Password</label>
+            <input {...register('confirmPassword')} type="password" className={inputClass} placeholder="Re-enter your password" />
+            {errors.confirmPassword && <p className="text-red-500 text-xs mt-1">{errors.confirmPassword.message}</p>}
           </div>
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+            disabled={isSubmitting}
+            className="w-full bg-green-700 text-white py-3 rounded-xl font-medium hover:bg-green-800 transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
           >
-            {loading ? 'Creating account...' : 'Register'}
+            {isSubmitting ? <><LoadingSpinner size="sm" /> Creating Account...</> : 'Create Account'}
           </button>
-
-          <p className="text-center text-sm text-gray-600">
-            Already have an account?{' '}
-            <Link href="/login" className="font-medium text-green-600 hover:text-green-500">
-              Sign in
-            </Link>
-          </p>
         </form>
+
+        <p className="text-center text-sm text-gray-500 mt-6">
+          Already have an account?{' '}
+          <Link href="/login" className="text-green-700 font-medium hover:underline">Sign in</Link>
+        </p>
       </div>
     </div>
   )
